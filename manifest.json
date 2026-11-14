@@ -1,0 +1,12 @@
+{
+  "name": "ALTIRI 観戦記録",
+  "short_name": "観戦記録",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0b1324",
+  "theme_color": "#0b1324",
+  "icons": [
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

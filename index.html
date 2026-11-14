@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="現地観戦記録">
+<meta name="theme-color" content="#0b1324">
+<title>現地観戦記録</title>
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0f1a2e; --card: #17223a; --ink: #e8ecf3; --sub: #93a0b5; --line: #26324b;
+    --dark: #0b1324; --navy2: #17223a; --navy3: #2b3a58; --accent: #e8a317; --win: #d18a00; --lose: #5d6880;
+    --unvisited: #9aa5b8;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    display: flex; flex-direction: column; height: 100dvh;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    background: var(--bg); color: var(--ink); font-size: 15px;
+  }
+  header {
+    background: var(--dark); color: #fff;
+    padding: calc(env(safe-area-inset-top) + 10px) 14px 10px;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  }
+  header h1 { font-size: 16px; margin: 0; letter-spacing: .04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  @media (max-width: 400px) { header h1 .long { display: none; } }
+  .hctl { display: flex; gap: 6px; align-items: center; }
+  .pseg { display: flex; border: 1px solid var(--navy3); border-radius: 8px; overflow: hidden; }
+  .pseg button { background: var(--navy2); color: #bbb; border: 0; padding: 6px 11px; font-size: 14px; }
+  .pseg button.on { background: var(--accent); color: var(--dark); font-weight: 700; }
+  header h1 span { color: var(--accent); }
+  header select {
+    background: var(--navy2); color: #fff; border: 1px solid var(--navy3); border-radius: 8px;
+    padding: 6px 8px; font-size: 14px;
+  }
+  main { flex: 1; position: relative; overflow: hidden; }
+  .view { position: absolute; inset: 0; overflow-y: auto; display: none; }
+  .view.active { display: block; }
+  #map { position: absolute; inset: 0; background: #f2f3f5; }
+  .map-summary {
+    position: absolute; top: 10px; left: 10px; z-index: 500;
+    background: rgba(11,19,36,.9); color: #fff; border-radius: 10px;
+    padding: 8px 12px; font-size: 13px; line-height: 1.5; pointer-events: none;
+  }
+  .map-summary b { color: var(--accent); font-size: 16px; }
+  .legend { display: flex; gap: 10px; font-size: 12px; color: #ddd; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
+
+  nav {
+    display: flex; background: var(--dark); border-top: 1px solid var(--navy2);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  nav button {
+    flex: 1; border: 0; background: none; padding: 10px 0 8px; font-size: 12px; color: #8a95a9;
+  }
+  nav button .ic { display: block; font-size: 20px; line-height: 1.1; }
+  nav button.active { color: var(--accent); font-weight: 700; }
+
+  #fab {
+    position: absolute; right: 16px; bottom: 16px; z-index: 600;
+    width: 56px; height: 56px; border-radius: 50%; border: 0;
+    background: var(--accent); color: var(--dark); font-size: 30px; font-weight: 700;
+    box-shadow: 0 4px 14px rgba(0,0,0,.3);
+  }
+
+  /* pins */
+  .pin {
+    width: 18px; height: 18px; border-radius: 50%;
+    background: var(--unvisited); border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,.45);
+  }
+  .pin.visited { background: var(--accent); border-color: var(--dark); }
+  .pin.home {
+    width: 28px; height: 28px; background: var(--dark); border-color: var(--accent);
+    color: var(--accent); font-size: 16px; line-height: 24px; text-align: center;
+  }
+  .pin .cnt {
+    position: absolute; top: -8px; right: -10px; background: var(--dark); color: #fff;
+    font-size: 10px; border-radius: 8px; padding: 0 4px; line-height: 14px;
+  }
+  .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--card); color: var(--ink); border: 1px solid var(--navy3); }
+  .leaflet-container a.leaflet-popup-close-button { color: var(--sub); }
+  .leaflet-bar a { background: var(--card); color: var(--ink); border-bottom-color: var(--line); }
+  .leaflet-bar a:hover { background: var(--navy3); color: #fff; }
+  .leaflet-bar a.leaflet-disabled { background: var(--card); color: #4a5670; }
+  .pop { min-width: 210px; font-size: 13px; }
+  .pop h3 { margin: 0 0 2px; font-size: 15px; }
+  .pop .clubs { color: var(--sub); font-size: 12px; }
+  .pop .rec { margin: 6px 0; font-weight: 700; }
+  .pop ul { list-style: none; padding: 0; margin: 0 0 8px; max-height: 180px; overflow-y: auto; }
+  .pop li { padding: 4px 0; border-top: 1px solid var(--line); display: flex; gap: 6px; align-items: center; }
+  .pop .none { color: var(--sub); margin: 6px 0 8px; }
+  .pop button {
+    width: 100%; border: 0; border-radius: 8px; background: var(--accent); color: var(--dark); font-weight: 700; padding: 8px; font-size: 13px;
+  }
+
+  .wl { display: inline-block; min-width: 22px; text-align: center; border-radius: 5px; font-size: 11px; font-weight: 700; padding: 1px 4px; color: #fff; }
+  .wl.W { background: var(--win); }
+  .wl.L { background: var(--lose); }
+  .ha { font-size: 10px; border: 1px solid var(--line); border-radius: 4px; padding: 0 3px; color: var(--sub); }
+
+  /* list & stats */
+  .section { padding: 14px; }
+  .season-h { display: flex; justify-content: space-between; align-items: baseline; margin: 18px 0 6px; }
+  .season-h:first-child { margin-top: 0; }
+  .season-h h2 { font-size: 15px; margin: 0; }
+  .season-h span { color: var(--sub); font-size: 13px; }
+  .card { background: var(--card); border-radius: 12px; overflow: hidden; border: 1px solid var(--line); }
+  .row { display: flex; align-items: center; gap: 10px; padding: 11px 12px; border-top: 1px solid var(--line); }
+  .row:first-child { border-top: 0; }
+  .row .main { flex: 1; min-width: 0; }
+  .row .t { font-weight: 600; }
+  .row .s { font-size: 12px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .score { font-variant-numeric: tabular-nums; font-weight: 700; }
+  .empty { text-align: center; color: var(--sub); padding: 40px 20px; line-height: 1.8; }
+
+  .big { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+  .tile { background: linear-gradient(160deg, #1d2a46, var(--dark)); color: #fff; border: 1px solid var(--navy2); border-radius: 12px; padding: 12px 10px; }
+  .tile .k { font-size: 11px; color: #bbb; }
+  .tile .v { font-size: 22px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .tile .v small { font-size: 12px; color: #bbb; font-weight: 400; }
+  .tile.acc .v { color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  td, th { padding: 9px 12px; border-top: 1px solid var(--line); text-align: left; }
+  tr:first-child td, tr:first-child th { border-top: 0; }
+  th { font-weight: 600; color: var(--sub); font-size: 12px; }
+  td.n { text-align: right; font-variant-numeric: tabular-nums; }
+  h4 { margin: 18px 0 6px; font-size: 14px; }
+  .btns { display: flex; gap: 8px; }
+  .btn { flex: 1; border: 1px solid var(--navy3); background: var(--card); color: var(--ink); border-radius: 10px; padding: 11px; font-size: 14px; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--dark); font-weight: 700; }
+  .btn.danger { border-color: #e06757; color: #e06757; }
+  .note { font-size: 12px; color: var(--sub); line-height: 1.6; margin-top: 8px; }
+
+  /* form */
+  dialog {
+    border: 1px solid var(--navy3); border-radius: 16px; padding: 0; width: min(440px, 94vw); max-height: 90dvh; background: var(--card); color: var(--ink);
+  }
+  dialog::backdrop { background: rgba(0,0,0,.5); }
+  dialog form { padding: 18px; }
+  dialog h2 { margin: 0 0 14px; font-size: 17px; }
+  label.f { display: block; margin-bottom: 12px; font-size: 12px; color: var(--sub); }
+  label.f input, label.f select, label.f textarea {
+    display: block; width: 100%; margin-top: 4px; font-size: 16px; padding: 9px 10px;
+    border: 1px solid var(--navy3); border-radius: 8px; background: var(--bg); color: var(--ink);
+    font-family: inherit;
+  }
+  .scores { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: end; margin-bottom: 12px; }
+  .scores label.f { margin: 0; }
+  .scores .dash { padding-bottom: 10px; font-weight: 700; }
+  .seg { display: flex; border: 1px solid var(--navy3); border-radius: 10px; overflow: hidden; margin: 4px 0 12px; }
+  .seg label { flex: 1; text-align: center; padding: 9px; font-size: 15px; color: var(--ink); }
+  .seg input { display: none; }
+  .seg label:has(input:checked) { background: var(--accent); color: var(--dark); font-weight: 700; }
+  .hint { font-size: 12px; color: var(--sub); margin: -6px 0 12px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="long">🏀 </span><span>ALTIRI</span> 観戦記録</h1>
+  <div class="hctl">
+    <div class="pseg" id="profileSeg" aria-label="だれの記録か"></div>
+    <select id="seasonSel" aria-label="シーズン"></select>
+  </div>
+</header>
+
+<main>
+  <section id="view-map" class="view active">
+    <div id="map"></div>
+    <div class="map-summary" id="mapSummary"></div>
+  </section>
+  <section id="view-list" class="view"><div class="section" id="listBody"></div></section>
+  <section id="view-stats" class="view"><div class="section" id="statsBody"></div></section>
+  <button id="fab" aria-label="観戦記録を追加">＋</button>
+</main>
+
+<nav>
+  <button data-tab="map" class="active"><span class="ic">🗾</span>地図</button>
+  <button data-tab="list"><span class="ic">📋</span>記録</button>
+  <button data-tab="stats"><span class="ic">📊</span>成績</button>
+</nav>
+
+<dialog id="dlg">
+  <form id="gameForm" method="dialog">
+    <h2 id="dlgTitle">観戦記録を追加</h2>
+    <label class="f">日付<input type="date" name="date" required></label>
+    <label class="f">会場<select name="venue" required></select></label>
+    <label class="f hidden" id="otherWrap">会場名（地図にない会場）<input type="text" name="venueName" placeholder="例：船橋アリーナ"></label>
+    <label class="f">対戦相手<select name="opponent" required></select></label>
+    <div class="scores">
+      <label class="f">アルティーリ<input type="number" name="my" inputmode="numeric" min="0"></label>
+      <span class="dash">-</span>
+      <label class="f">相手<input type="number" name="opp" inputmode="numeric" min="0"></label>
+    </div>
+    <div class="hint">スコアを入れると勝敗は自動で選ばれます（スコア不明なら勝敗だけでもOK）</div>
+    <div class="seg">
+      <label><input type="radio" name="result" value="W">勝ち</label>
+      <label><input type="radio" name="result" value="L">負け</label>
+    </div>
+    <label class="f">メモ<textarea name="memo" rows="2" placeholder="一緒に行った人、印象に残ったプレーなど"></textarea></label>
+    <div class="btns">
+      <button type="button" class="btn" id="cancelBtn">キャンセル</button>
+      <button type="submit" class="btn primary">保存</button>
+    </div>
+    <div class="btns" style="margin-top:8px">
+      <button type="button" class="btn danger hidden" id="deleteBtn">この記録を削除</button>
+    </div>
+  </form>
+</dialog>
+
+<input type="file" id="importFile" accept="application/json,.json" class="hidden">
+
+<script>
+/* ============================================================
+   マスターデータ
+   座標はおおよその位置です。ずれていたら lat/lng を直してください。
+   ============================================================ */
+const MY_CLUB = 'altiri';
+
+const VENUES = {
+  'kitael':       { name: '北海きたえーる', lat: 43.0497, lng: 141.3762 },
+  'xebio-sendai': { name: 'ゼビオアリーナ仙台', lat: 38.2300, lng: 140.8790 },
+  'cna-akita':    { name: 'CNAアリーナ★あきた', lat: 39.7262, lng: 140.0960 },
+  'mito':         { name: 'アダストリアみとアリーナ', lat: 36.3700, lng: 140.4560 },
+  'brex':         { name: 'とちぎん・ブレックスアリーナ宇都宮', names: { '2025-26': 'ブレックスアリーナ宇都宮' }, lat: 36.5660, lng: 139.9130 },
+  'ota':          { name: 'オープンハウスアリーナ太田', lat: 36.3040, lng: 139.3870 },
+  'koshigaya':    { name: '越谷市立総合体育館', lat: 35.8850, lng: 139.8070 },
+  'chiba-port':   { name: 'ちばぎんアリーナ', names: { '2025-26': '千葉ポートアリーナ' }, lat: 35.6040, lng: 140.1060 },
+  'lala':         { name: 'LaLa arena TOKYO-BAY', lat: 35.6830, lng: 139.9900 },
+  'toyota-arena': { name: 'TOYOTA ARENA TOKYO', lat: 35.6240, lng: 139.7790 },
+  'aogaku':       { name: '青山学院記念館', lat: 35.6610, lng: 139.7110 },
+  'todoroki':     { name: '東急ドレッセとどろきアリーナ', names: { '2025-26': '川崎市とどろきアリーナ' }, lat: 35.5850, lng: 139.6520 },
+  'yokohama-pool':{ name: '横浜国際プール', lat: 35.5300, lng: 139.5860 },
+  'buntai':       { name: '横浜BUNTAI', lat: 35.4430, lng: 139.6420 },
+  'toyama':       { name: 'YKK APアリーナ', names: { '2025-26': '富山市総合体育館' }, lat: 36.6930, lng: 137.2300 },
+  'white-ring':   { name: 'ホワイトリング', lat: 36.6230, lng: 138.1990 },
+  'toyohashi':    { name: '豊橋市総合体育館', lat: 34.7520, lng: 137.3530 },
+  'kariya':       { name: 'ウィングアリーナ刈谷', lat: 34.9970, lng: 137.0040 },
+  'biwajima':     { name: '枇杷島スポーツセンター', lat: 35.1910, lng: 136.8800 },
+  'ig-arena':     { name: 'IGアリーナ', lat: 35.1880, lng: 136.8990 },
+  'shiga':        { name: '滋賀ダイハツアリーナ', lat: 35.0050, lng: 135.8740 },
+  'kyoto':        { name: 'にっしんでんきアリーナ京都', lat: 34.9940, lng: 135.7300 },
+  'maishima':     { name: 'おおきにアリーナ舞洲', lat: 34.6640, lng: 135.3970 },
+  'glion':        { name: 'GLION ARENA KOBE', lat: 34.6820, lng: 135.1950 },
+  'matsue':       { name: 'バンダイナムコアリーナ松江', names: { '2025-26': '松江市総合体育館' }, lat: 35.4580, lng: 133.0700 },
+  'hiroshima-sp': { name: '広島サンプラザホール', lat: 34.3960, lng: 132.4100 },
+  'green-arena':  { name: '広島グリーンアリーナ', lat: 34.3950, lng: 132.4550 },
+  'saga':         { name: 'SAGAアリーナ', lat: 33.2510, lng: 130.2900 },
+  'happiness':    { name: 'HAPPINESS ARENA', lat: 32.7520, lng: 129.8710 },
+  'okinawa':      { name: '沖縄サントリーアリーナ', lat: 26.3290, lng: 127.8050 },
+};
+
+// [クラブID, クラブ名, ホーム会場ID]
+const SEASONS = {
+  '2026-27': { label: '2026-27 B.PREMIER', teams: [
+    ['levanga','レバンガ北海道','kitael'],
+    ['sendai','仙台89ERS','xebio-sendai'],
+    ['akita','秋田ノーザンハピネッツ','cna-akita'],
+    ['ibaraki','茨城ロボッツ','mito'],
+    ['utsunomiya','宇都宮ブレックス','brex'],
+    ['gunma','群馬クレインサンダーズ','ota'],
+    ['altiri','アルティーリ千葉','chiba-port'],
+    ['jets','千葉ジェッツ','lala'],
+    ['alvark','アルバルク東京','toyota-arena'],
+    ['sunrockers','東京サンロッカーズ','toyota-arena'],
+    ['kawasaki','川崎ブレイブサンダース','todoroki'],
+    ['yokohama','横浜ビー・コルセアーズ','buntai'],
+    ['toyama','富山グラウジーズ','toyama'],
+    ['shinshu','信州ブレイブウォリアーズ','white-ring'],
+    ['san-en','三遠ネオフェニックス','toyohashi'],
+    ['mikawa','シーホース三河','kariya'],
+    ['dolphins','名古屋ダイヤモンドドルフィンズ','ig-arena'],
+    ['shiga','滋賀レイクス','shiga'],
+    ['kyoto','京都ハンナリーズ','kyoto'],
+    ['osaka','大阪エヴェッサ','maishima'],
+    ['kobe','神戸ストークス','glion'],
+    ['shimane','島根スサノオマジック','matsue'],
+    ['hiroshima','広島ドラゴンフライズ','green-arena'],
+    ['saga','佐賀バルーナーズ','saga'],
+    ['nagasaki','長崎ヴェルカ','happiness'],
+    ['ryukyu','琉球ゴールデンキングス','okinawa'],
+  ]},
+  '2025-26': { label: '2025-26 B1', teams: [
+    ['levanga','レバンガ北海道','kitael'],
+    ['sendai','仙台89ERS','xebio-sendai'],
+    ['akita','秋田ノーザンハピネッツ','cna-akita'],
+    ['ibaraki','茨城ロボッツ','mito'],
+    ['utsunomiya','宇都宮ブレックス','brex'],
+    ['gunma','群馬クレインサンダーズ','ota'],
+    ['koshigaya','越谷アルファーズ','koshigaya'],
+    ['altiri','アルティーリ千葉','chiba-port'],
+    ['jets','千葉ジェッツふなばし','lala'],
+    ['alvark','アルバルク東京','toyota-arena'],
+    ['sunrockers','サンロッカーズ渋谷','aogaku'],
+    ['kawasaki','川崎ブレイブサンダース','todoroki'],
+    ['yokohama','横浜ビー・コルセアーズ','yokohama-pool'],
+    ['toyama','富山グラウジーズ','toyama'],
+    ['san-en','三遠ネオフェニックス','toyohashi'],
+    ['mikawa','シーホース三河','kariya'],
+    ['fe-nagoya','ファイティングイーグルス名古屋','biwajima'],
+    ['dolphins','名古屋ダイヤモンドドルフィンズ','ig-arena'],
+    ['shiga','滋賀レイクス','shiga'],
+    ['kyoto','京都ハンナリーズ','kyoto'],
+    ['osaka','大阪エヴェッサ','maishima'],
+    ['shimane','島根スサノオマジック','matsue'],
+    ['hiroshima','広島ドラゴンフライズ','hiroshima-sp'],
+    ['saga','佐賀バルーナーズ','saga'],
+    ['nagasaki','長崎ヴェルカ','happiness'],
+    ['ryukyu','琉球ゴールデンキングス','okinawa'],
+  ]},
+};
+const SEASON_KEYS = Object.keys(SEASONS); // 新しい順
+const ALL = 'all';
+
+/* ============================================================
+   ヘルパー
+   ============================================================ */
+const $ = s => document.querySelector(s);
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function seasonOf(date) {
+  const [y, m] = date.split('-').map(Number);
+  const s = m >= 8 ? y : y - 1;
+  return `${s}-${String((s + 1) % 100).padStart(2, '0')}`;
+}
+const teamsOf = season => SEASONS[season]?.teams || [];
+function homeVenueOf(season, club) {
+  const t = teamsOf(season).find(t => t[0] === club);
+  return t ? t[2] : null;
+}
+function clubName(id, season) {
+  const t = teamsOf(season).find(t => t[0] === id);
+  if (t) return t[1];
+  for (const k of SEASON_KEYS) { const x = teamsOf(k).find(t => t[0] === id); if (x) return x[1]; }
+  return id;
+}
+function venueName(id, season) {
+  const v = VENUES[id];
+  if (!v) return id;
+  return (season && v.names?.[season]) || v.name;
+}
+function gameVenueName(g) {
+  return g.venueId === 'other' ? (g.venueName || 'その他の会場') : venueName(g.venueId, seasonOf(g.date));
+}
+function venuesFor(season) {
+  const keys = season === ALL ? SEASON_KEYS : [season];
+  const set = new Set();
+  keys.forEach(k => teamsOf(k).forEach(t => set.add(t[2])));
+  return [...set];
+}
+function homeClubsAt(venueId, season) {
+  return teamsOf(season).filter(t => t[2] === venueId).map(t => t[0]);
+}
+const isHome = g => g.venueId === homeVenueOf(seasonOf(g.date), MY_CLUB);
+const fmtDate = d => { const [y, m, dd] = d.split('-'); return `${y}/${m}/${dd}`; };
+const hasScore = g => g.my !== '' && g.my != null && g.opp !== '' && g.opp != null;
+const scoreText = g => hasScore(g) ? `${g.my}-${g.opp}` : '';
+function tally(games) {
+  const w = games.filter(g => g.result === 'W').length;
+  const l = games.filter(g => g.result === 'L').length;
+  return { w, l, n: games.length, pct: (w + l) ? (w / (w + l)) : null };
+}
+const pctText = t => t.pct == null ? '-' : t.pct.toFixed(3).replace(/^0/, '');
+
+/* ============================================================
+   保存データ
+   ============================================================ */
+const KEY = 'altiri-log-v2', OLD_KEY = 'altiri-log-v1';
+const PROFILES = { me: '慎一朗', wife: '舞' };
+// 初期データ（2025-26・2026-27の観戦記録。Bリーグ公式の試合結果から作成）
+const SEED = {"games":[{"id":"bl504732","date":"2025-10-04","venueId":"chiba-port","venueName":"","opponent":"nagasaki","my":97,"opp":94,"result":"W","memo":""},{"id":"bl504733","date":"2025-10-05","venueId":"chiba-port","venueName":"","opponent":"nagasaki","my":68,"opp":102,"result":"L","memo":""},{"id":"bl504801","date":"2025-10-18","venueId":"chiba-port","venueName":"","opponent":"toyama","my":95,"opp":99,"result":"L","memo":""},{"id":"bl504802","date":"2025-10-19","venueId":"chiba-port","venueName":"","opponent":"toyama","my":86,"opp":84,"result":"W","memo":""},{"id":"bl504849","date":"2025-10-29","venueId":"chiba-port","venueName":"","opponent":"alvark","my":94,"opp":98,"result":"L","memo":""},{"id":"bl504888","date":"2025-11-05","venueId":"chiba-port","venueName":"","opponent":"gunma","my":79,"opp":88,"result":"L","memo":""},{"id":"bl504901","date":"2025-11-08","venueId":"chiba-port","venueName":"","opponent":"kawasaki","my":101,"opp":71,"result":"W","memo":""},{"id":"bl504902","date":"2025-11-09","venueId":"chiba-port","venueName":"","opponent":"kawasaki","my":88,"opp":76,"result":"W","memo":""},{"id":"bl504942","date":"2025-11-15","venueId":"chiba-port","venueName":"","opponent":"mikawa","my":86,"opp":89,"result":"L","memo":""},{"id":"bl504943","date":"2025-11-16","venueId":"chiba-port","venueName":"","opponent":"mikawa","my":68,"opp":70,"result":"L","memo":""},{"id":"bl504991","date":"2025-12-10","venueId":"chiba-port","venueName":"","opponent":"levanga","my":73,"opp":94,"result":"L","memo":""},{"id":"bl505031","date":"2025-12-20","venueId":"chiba-port","venueName":"","opponent":"utsunomiya","my":82,"opp":96,"result":"L","memo":""},{"id":"bl505032","date":"2025-12-21","venueId":"chiba-port","venueName":"","opponent":"utsunomiya","my":83,"opp":96,"result":"L","memo":""},{"id":"bl505094","date":"2026-01-03","venueId":"chiba-port","venueName":"","opponent":"shimane","my":65,"opp":82,"result":"L","memo":""},{"id":"bl505095","date":"2026-01-04","venueId":"chiba-port","venueName":"","opponent":"shimane","my":83,"opp":78,"result":"W","memo":""},{"id":"bl505126","date":"2026-01-24","venueId":"chiba-port","venueName":"","opponent":"saga","my":73,"opp":85,"result":"L","memo":""},{"id":"bl505127","date":"2026-01-25","venueId":"chiba-port","venueName":"","opponent":"saga","my":73,"opp":79,"result":"L","memo":""},{"id":"bl505148","date":"2026-01-28","venueId":"chiba-port","venueName":"","opponent":"san-en","my":68,"opp":77,"result":"L","memo":""},{"id":"bl505203","date":"2026-02-07","venueId":"kyoto","venueName":"","opponent":"kyoto","my":91,"opp":80,"result":"W","memo":""},{"id":"bl505204","date":"2026-02-08","venueId":"kyoto","venueName":"","opponent":"kyoto","my":82,"opp":65,"result":"W","memo":""},{"id":"bl505219","date":"2026-02-14","venueId":"chiba-port","venueName":"","opponent":"ryukyu","my":85,"opp":87,"result":"L","memo":""},{"id":"bl505220","date":"2026-02-15","venueId":"chiba-port","venueName":"","opponent":"ryukyu","my":55,"opp":73,"result":"L","memo":""},{"id":"bl505265","date":"2026-03-11","venueId":"toyota-arena","venueName":"","opponent":"alvark","my":81,"opp":87,"result":"L","memo":""},{"id":"bl505282","date":"2026-03-14","venueId":"chiba-port","venueName":"","opponent":"hiroshima","my":87,"opp":81,"result":"W","memo":""},{"id":"bl505283","date":"2026-03-15","venueId":"chiba-port","venueName":"","opponent":"hiroshima","my":91,"opp":104,"result":"L","memo":""},{"id":"bl505304","date":"2026-03-28","venueId":"chiba-port","venueName":"","opponent":"jets","my":71,"opp":88,"result":"L","memo":""},{"id":"bl505305","date":"2026-03-29","venueId":"chiba-port","venueName":"","opponent":"jets","my":70,"opp":69,"result":"W","memo":""},{"id":"bl505355","date":"2026-04-04","venueId":"shiga","venueName":"","opponent":"shiga","my":85,"opp":92,"result":"L","memo":""},{"id":"bl505356","date":"2026-04-05","venueId":"shiga","venueName":"","opponent":"shiga","my":64,"opp":79,"result":"L","memo":""},{"id":"bl505367","date":"2026-04-08","venueId":"chiba-port","venueName":"","opponent":"sendai","my":80,"opp":104,"result":"L","memo":""},{"id":"bl505384","date":"2026-04-11","venueId":"chiba-port","venueName":"","opponent":"yokohama","my":69,"opp":79,"result":"L","memo":""},{"id":"bl505385","date":"2026-04-12","venueId":"chiba-port","venueName":"","opponent":"yokohama","my":81,"opp":89,"result":"L","memo":""},{"id":"bl505425","date":"2026-04-18","venueId":"chiba-port","venueName":"","opponent":"akita","my":83,"opp":65,"result":"W","memo":""},{"id":"bl505426","date":"2026-04-19","venueId":"chiba-port","venueName":"","opponent":"akita","my":75,"opp":74,"result":"W","memo":""},{"id":"bl505446","date":"2026-04-22","venueId":"chiba-port","venueName":"","opponent":"ibaraki","my":66,"opp":79,"result":"L","memo":""},{"id":"bl505467","date":"2026-04-26","venueId":"aogaku","venueName":"","opponent":"sunrockers","my":87,"opp":85,"result":"W","memo":""},{"id":"bl506398","date":"2026-09-26","venueId":"ota","venueName":"","opponent":"gunma","my":59,"opp":91,"result":"L","memo":""},{"id":"bl506405","date":"2026-10-03","venueId":"chiba-port","venueName":"","opponent":"kawasaki","my":99,"opp":90,"result":"W","memo":""},{"id":"bl506420","date":"2026-10-04","venueId":"chiba-port","venueName":"","opponent":"kawasaki","my":74,"opp":82,"result":"L","memo":""},{"id":"bl506444","date":"2026-10-09","venueId":"chiba-port","venueName":"","opponent":"osaka","my":97,"opp":90,"result":"W","memo":""},{"id":"bl506456","date":"2026-10-11","venueId":"chiba-port","venueName":"","opponent":"toyama","my":74,"opp":94,"result":"L","memo":""},{"id":"bl506470","date":"2026-10-17","venueId":"chiba-port","venueName":"","opponent":"hiroshima","my":71,"opp":89,"result":"L","memo":""},{"id":"bl506501","date":"2026-10-24","venueId":"mito","venueName":"","opponent":"ibaraki","my":87,"opp":102,"result":"L","memo":""},{"id":"bl506511","date":"2026-10-26","venueId":"chiba-port","venueName":"","opponent":"gunma","my":74,"opp":85,"result":"L","memo":""},{"id":"bl506547","date":"2026-11-06","venueId":"lala","venueName":"","opponent":"jets","my":87,"opp":89,"result":"L","memo":""},{"id":"bl506562","date":"2026-11-09","venueId":"todoroki","venueName":"","opponent":"kawasaki","my":85,"opp":76,"result":"W","memo":""},{"id":"bl506575","date":"2026-11-12","venueId":"chiba-port","venueName":"","opponent":"yokohama","my":75,"opp":66,"result":"W","memo":""},{"id":"bl506585","date":"2026-11-14","venueId":"chiba-port","venueName":"","opponent":"san-en","my":69,"opp":86,"result":"L","memo":""}]};
+// 保存形式: { current: 'me', profiles: { me: { games: [...] }, wife: { games: [...] } } }
+function loadStore() {
+  try { const s = JSON.parse(localStorage.getItem(KEY)); if (s?.profiles) return s; } catch {}
+  let mine = structuredClone(SEED.games);
+  try { const old = JSON.parse(localStorage.getItem(OLD_KEY)); if (old?.games) mine = old.games; } catch {}
+  return { current: 'me', profiles: { me: { games: mine } } };
+}
+const store = loadStore();
+for (const p in PROFILES) store.profiles[p] ||= { games: structuredClone(SEED.games) };
+if (!PROFILES[store.current]) store.current = 'me';
+let db = store.profiles[store.current];
+function save() { localStorage.setItem(KEY, JSON.stringify(store)); renderAll(); }
+
+const profileSeg = document.getElementById('profileSeg');
+function renderProfileSeg() {
+  profileSeg.innerHTML = Object.entries(PROFILES).map(([k, v]) =>
+    `<button data-p="${k}" class="${k === store.current ? 'on' : ''}">${v}</button>`).join('');
+}
+profileSeg.addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b || b.dataset.p === store.current) return;
+  store.current = b.dataset.p;
+  db = store.profiles[store.current];
+  map?.closePopup();
+  renderProfileSeg();
+  save();
+});
+renderProfileSeg();
+const sortedGames = () => [...db.games].sort((a, b) => b.date.localeCompare(a.date));
+const gamesIn = season => season === ALL ? db.games : db.games.filter(g => seasonOf(g.date) === season);
+
+/* ============================================================
+   シーズン選択
+   ============================================================ */
+const seasonSel = $('#seasonSel');
+seasonSel.innerHTML = SEASON_KEYS.map(k => `<option value="${k}">${k}</option>`).join('')
+  + `<option value="${ALL}">全期間</option>`;
+const todaySeason = seasonOf(today());
+let cur = SEASONS[todaySeason] ? todaySeason : SEASON_KEYS[0];
+seasonSel.value = cur;
+seasonSel.addEventListener('change', () => { cur = seasonSel.value; renderAll(); });
+
+/* ============================================================
+   地図
+   ============================================================ */
+const map = L.map('map', { zoomControl: false, attributionControl: true }).setView([36.0, 137.6], 5);
+L.control.zoom({ position: 'bottomleft' }).addTo(map);
+L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png', {
+  minZoom: 5, maxZoom: 18,
+  attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank">国土地理院</a>',
+}).addTo(map);
+const pinLayer = L.layerGroup().addTo(map);
+
+function renderMap() {
+  pinLayer.clearLayers();
+  const venues = venuesFor(cur);
+  const games = gamesIn(cur);
+  const myHome = cur === ALL ? SEASON_KEYS.map(k => homeVenueOf(k, MY_CLUB)) : [homeVenueOf(cur, MY_CLUB)];
+  let visitedCount = 0;
+
+  venues.forEach(id => {
+    const v = VENUES[id];
+    const vg = games.filter(g => g.venueId === id).sort((a, b) => b.date.localeCompare(a.date));
+    const visited = vg.length > 0;
+    if (visited) visitedCount++;
+    const home = myHome.includes(id);
+    const html = home
+      ? `<div class="pin home ${visited ? 'visited' : ''}">★${visited ? `<span class="cnt">${vg.length}</span>` : ''}</div>`
+      : `<div class="pin ${visited ? 'visited' : ''}">${vg.length > 1 ? `<span class="cnt">${vg.length}</span>` : ''}</div>`;
+    const size = home ? 28 : 18;
+    const icon = L.divIcon({ html, className: '', iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
+    const m = L.marker([v.lat, v.lng], { icon, zIndexOffset: home ? 1000 : visited ? 500 : 0 });
+    m.bindPopup(() => popupHtml(id, vg), { maxWidth: 280 });
+    pinLayer.addLayer(m);
+  });
+
+  const t = tally(games);
+  $('#mapSummary').innerHTML =
+    `${PROFILES[store.current]}の記録　アリーナ制覇 <b>${visitedCount}</b> / ${venues.length}　現地 <b>${t.w}</b>勝 <b>${t.l}</b>敗<br>` +
+    `<div class="legend"><span><i style="background:var(--accent)"></i>行った</span>` +
+    `<span><i style="background:var(--unvisited)"></i>まだ</span><span>★ホーム</span></div>`;
+}
+
+function popupHtml(id, vg) {
+  const seasons = cur === ALL ? SEASON_KEYS : [cur];
+  const clubs = [...new Set(seasons.flatMap(s => homeClubsAt(id, s).map(c => clubName(c, s))))];
+  const name = cur === ALL
+    ? [...new Set(SEASON_KEYS.map(s => venueName(id, s)))].join(' / ')
+    : venueName(id, cur);
+  const t = tally(vg);
+  const list = vg.length
+    ? `<div class="rec">訪問 ${vg.length}回　${t.w}勝 ${t.l}敗</div><ul>` + vg.map(g =>
+        `<li><span class="wl ${g.result}">${g.result === 'W' ? '勝' : '負'}</span>` +
+        `<span>${fmtDate(g.date)}</span><span>vs ${esc(clubName(g.opponent, seasonOf(g.date)))}</span>` +
+        `<span class="score" style="margin-left:auto">${scoreText(g)}</span></li>`).join('') + '</ul>'
+    : `<div class="none">まだ現地観戦なし</div>`;
+  return `<div class="pop"><h3>${esc(name)}</h3><div class="clubs">${esc(clubs.join('・'))}</div>${list}` +
+    `<button data-act="add" data-venue="${id}">＋ この会場の観戦を記録</button></div>`;
+}
+
+map.on('popupopen', e => {
+  e.popup.getElement().querySelectorAll('[data-act="add"]').forEach(b =>
+    b.addEventListener('click', () => { map.closePopup(); openForm(null, b.dataset.venue); }));
+});
+
+/* ============================================================
+   記録一覧
+   ============================================================ */
+function renderList() {
+  const games = sortedGames().filter(g => cur === ALL || seasonOf(g.date) === cur);
+  if (!games.length) {
+    $('#listBody').innerHTML = `<div class="empty">まだ記録がありません。<br>右下の ＋ から観戦記録を追加しましょう。</div>`;
+    return;
+  }
+  const groups = {};
+  games.forEach(g => (groups[seasonOf(g.date)] ||= []).push(g));
+  $('#listBody').innerHTML = Object.keys(groups).sort().reverse().map(s => {
+    const t = tally(groups[s]);
+    return `<div class="season-h"><h2>${esc(SEASONS[s]?.label || s)}</h2><span>${t.w}勝 ${t.l}敗</span></div>` +
+      `<div class="card">` + groups[s].map(g => `
+        <div class="row" data-id="${g.id}">
+          <span class="wl ${g.result}">${g.result === 'W' ? '勝' : '負'}</span>
+          <div class="main">
+            <div class="t">vs ${esc(clubName(g.opponent, s))} <span class="ha">${isHome(g) ? 'HOME' : 'AWAY'}</span></div>
+            <div class="s">${fmtDate(g.date)}・${esc(gameVenueName(g))}${g.memo ? '・' + esc(g.memo) : ''}</div>
+          </div>
+          <span class="score">${scoreText(g)}</span>
+        </div>`).join('') + `</div>`;
+  }).join('');
+}
+$('#listBody').addEventListener('click', e => {
+  const row = e.target.closest('.row');
+  if (row) openForm(db.games.find(g => g.id === row.dataset.id));
+});
+
+/* ============================================================
+   成績
+   ============================================================ */
+function renderStats() {
+  const games = gamesIn(cur);
+  const t = tally(games);
+  const home = tally(games.filter(isHome));
+  const away = tally(games.filter(g => !isHome(g)));
+  const venues = venuesFor(cur);
+  const visited = venues.filter(v => games.some(g => g.venueId === v)).length;
+
+  const bySeason = SEASON_KEYS.filter(s => cur === ALL || s === cur).map(s => {
+    const x = tally(gamesIn(s));
+    const vs = venuesFor(s);
+    const vv = vs.filter(v => gamesIn(s).some(g => g.venueId === v)).length;
+    return `<tr><td>${esc(SEASONS[s].label)}</td><td class="n">${x.w}-${x.l}</td><td class="n">${pctText(x)}</td><td class="n">${vv}/${vs.length}</td></tr>`;
+  }).join('');
+
+  const opp = {};
+  games.forEach(g => (opp[g.opponent] ||= []).push(g));
+  const oppRows = Object.entries(opp)
+    .map(([id, gs]) => ({ id, t: tally(gs) }))
+    .sort((a, b) => b.t.n - a.t.n || b.t.w - a.t.w)
+    .map(o => `<tr><td>${esc(clubName(o.id, cur === ALL ? SEASON_KEYS[0] : cur))}</td><td class="n">${o.t.w}-${o.t.l}</td><td class="n">${pctText(o.t)}</td></tr>`)
+    .join('');
+
+  // 連勝・連敗（日付順）
+  const chrono = [...games].sort((a, b) => a.date.localeCompare(b.date));
+  let streak = '';
+  if (chrono.length) {
+    const last = chrono[chrono.length - 1].result;
+    let n = 0;
+    for (let i = chrono.length - 1; i >= 0 && chrono[i].result === last; i--) n++;
+    streak = `${n}${last === 'W' ? '連勝' : '連敗'}中`;
+  }
+
+  $('#statsBody').innerHTML = `
+    <div class="big">
+      <div class="tile acc"><div class="k">現地観戦成績</div><div class="v">${t.w}-${t.l}</div></div>
+      <div class="tile"><div class="k">勝率</div><div class="v">${pctText(t)}</div></div>
+      <div class="tile"><div class="k">アリーナ制覇</div><div class="v">${visited}<small>/${venues.length}</small></div></div>
+    </div>
+    <div class="card"><table>
+      <tr><td>ホーム</td><td class="n">${home.w}-${home.l}</td><td class="n">${pctText(home)}</td></tr>
+      <tr><td>アウェイ</td><td class="n">${away.w}-${away.l}</td><td class="n">${pctText(away)}</td></tr>
+      <tr><td>現在</td><td class="n" colspan="2">${streak || '-'}</td></tr>
+    </table></div>
+
+    <h4>シーズン別</h4>
+    <div class="card"><table>
+      <tr><th>シーズン</th><th class="n">勝敗</th><th class="n">勝率</th><th class="n">制覇</th></tr>
+      ${bySeason}
+    </table></div>
+
+    <h4>対戦相手別</h4>
+    ${oppRows ? `<div class="card"><table><tr><th>相手</th><th class="n">勝敗</th><th class="n">勝率</th></tr>${oppRows}</table></div>`
+              : `<div class="note">記録がありません</div>`}
+
+    <h4>バックアップ</h4>
+    <div class="btns">
+      <button class="btn" id="exportBtn">書き出し</button>
+      <button class="btn" id="importBtn">読み込み</button>
+    </div>
+    <div class="note">
+      「${PROFILES[store.current]}」の記録（全${db.games.length}件）を書き出し／読み込みします。<br>
+      記録はこの端末のブラウザ内だけに保存されます。機種変更やデータ消失に備えて、ときどき「書き出し」でファイルを保存してください。<br>
+      相手の記録を見たいときは、相手のiPhoneで書き出したファイルをAirDropなどで受け取り、上の切り替えを相手の名前にしてから「読み込み」してください。
+    </div>`;
+
+  $('#exportBtn').onclick = exportData;
+  $('#importBtn').onclick = () => $('#importFile').click();
+}
+
+function exportData() {
+  const data = { profile: store.current, games: db.games };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `altiri-log-${store.current}-${today()}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+$('#importFile').addEventListener('change', async e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    if (!Array.isArray(data.games)) throw new Error('形式が違います');
+    const who = PROFILES[store.current];
+    if (!confirm(`「${who}」の記録として${data.games.length}件を読み込みます。今の「${who}」の記録（${db.games.length}件）は置き換えられます。よろしいですか？`)) return;
+    db.games = data.games;
+    save();
+  } catch (err) {
+    alert('読み込みに失敗しました：' + err.message);
+  }
+});
+
+/* ============================================================
+   入力フォーム
+   ============================================================ */
+const dlg = $('#dlg'), form = $('#gameForm');
+let editingId = null;
+
+function fillVenueOptions(season, selected) {
+  const ids = venuesFor(SEASONS[season] ? season : ALL);
+  // 選択中の会場が今シーズン一覧にない場合も残す
+  if (selected && selected !== 'other' && !ids.includes(selected)) ids.push(selected);
+  const myHome = homeVenueOf(season, MY_CLUB);
+  const sorted = ids.sort((a, b) => (b === myHome) - (a === myHome));
+  form.venue.innerHTML = `<option value="">選択してください</option>` + sorted.map(id => {
+    const clubs = homeClubsAt(id, season).map(c => clubName(c, season)).join('・');
+    return `<option value="${id}">${esc(venueName(id, season))}${clubs ? `（${esc(clubs)}）` : ''}</option>`;
+  }).join('') + `<option value="other">その他の会場（地図に出ません）</option>`;
+  form.venue.value = selected || '';
+}
+function fillOpponentOptions(season, selected) {
+  let teams = teamsOf(season);
+  if (!teams.length) {
+    const seen = new Map();
+    SEASON_KEYS.forEach(k => teamsOf(k).forEach(t => { if (!seen.has(t[0])) seen.set(t[0], t); }));
+    teams = [...seen.values()];
+  }
+  teams = teams.filter(t => t[0] !== MY_CLUB);
+  if (selected && !teams.some(t => t[0] === selected)) teams.push([selected, clubName(selected), '']);
+  form.opponent.innerHTML = `<option value="">選択してください</option>` +
+    teams.map(t => `<option value="${t[0]}">${esc(t[1])}</option>`).join('');
+  form.opponent.value = selected || '';
+}
+function refreshFormOptions() {
+  const season = seasonOf(form.date.value || today());
+  fillVenueOptions(season, form.venue.value);
+  fillOpponentOptions(season, form.opponent.value);
+}
+function autoOpponent() {
+  const season = seasonOf(form.date.value);
+  $('#otherWrap').classList.toggle('hidden', form.venue.value !== 'other');
+  const hosts = homeClubsAt(form.venue.value, season).filter(c => c !== MY_CLUB);
+  if (hosts.length && !hosts.includes(form.opponent.value)) form.opponent.value = hosts[0];
+}
+function autoResult() {
+  const my = form.my.value, opp = form.opp.value;
+  if (my === '' || opp === '' || Number(my) === Number(opp)) return;
+  form.result.value = Number(my) > Number(opp) ? 'W' : 'L';
+}
+
+function openForm(game, venueId) {
+  editingId = game?.id || null;
+  form.reset();
+  $('#dlgTitle').textContent = game ? '観戦記録を編集' : '観戦記録を追加';
+  $('#deleteBtn').classList.toggle('hidden', !game);
+  form.date.value = game?.date || today();
+  const season = seasonOf(form.date.value);
+  fillVenueOptions(season, game?.venueId || venueId || '');
+  fillOpponentOptions(season, game?.opponent || '');
+  form.venueName.value = game?.venueName || '';
+  form.my.value = game?.my ?? '';
+  form.opp.value = game?.opp ?? '';
+  if (game?.result) form.result.value = game.result;
+  form.memo.value = game?.memo || '';
+  if (!game) autoOpponent();
+  $('#otherWrap').classList.toggle('hidden', form.venue.value !== 'other');
+  dlg.showModal();
+}
+
+form.date.addEventListener('change', () => { refreshFormOptions(); autoOpponent(); });
+form.venue.addEventListener('change', autoOpponent);
+form.my.addEventListener('input', autoResult);
+form.opp.addEventListener('input', autoResult);
+$('#cancelBtn').onclick = () => dlg.close();
+$('#fab').onclick = () => openForm(null);
+
+form.addEventListener('submit', e => {
+  e.preventDefault();
+  const f = form;
+  if (!f.venue.value) return alert('会場を選んでください');
+  if (!f.opponent.value) return alert('対戦相手を選んでください');
+  if (!f.result.value) return alert('勝ち／負けを選んでください');
+  const g = {
+    id: editingId || (Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
+    date: f.date.value,
+    venueId: f.venue.value,
+    venueName: f.venue.value === 'other' ? f.venueName.value.trim() : '',
+    opponent: f.opponent.value,
+    my: f.my.value === '' ? '' : Number(f.my.value),
+    opp: f.opp.value === '' ? '' : Number(f.opp.value),
+    result: f.result.value,
+    memo: f.memo.value.trim(),
+  };
+  const i = db.games.findIndex(x => x.id === g.id);
+  if (i >= 0) db.games[i] = g; else db.games.push(g);
+  dlg.close();
+  save();
+});
+$('#deleteBtn').onclick = () => {
+  if (!editingId || !confirm('この記録を削除しますか？')) return;
+  db.games = db.games.filter(g => g.id !== editingId);
+  dlg.close();
+  save();
+};
+
+/* ============================================================
+   タブ
+   ============================================================ */
+document.querySelectorAll('nav button').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('active', x === b));
+  document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + b.dataset.tab));
+  if (b.dataset.tab === 'map') setTimeout(() => map.invalidateSize(), 0);
+}));
+
+function renderAll() { renderMap(); renderList(); renderStats(); }
+renderAll();
+</script>
+</body>
+</html>
